@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NBA Live Win Probability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0d13;
+    --panel: #12161f;
+    --panel-2: #171c27;
+    --line: #232838;
+    --text: #eef1f6;
+    --text-dim: #838ba0;
+    --home: #ff7a29;
+    --home-dim: #ff7a2933;
+    --away: #4c8dff;
+    --away-dim: #4c8dff33;
+    --good: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at top, #10141d 0%, #0a0d13 60%);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 28px 20px 60px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+
+  /* ---------- Header / controls ---------- */
+  .top {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 22px; flex-wrap: wrap; gap: 14px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); }
+  .brand h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; margin: 0; color: var(--text-dim); }
+  .brand h1 b { color: var(--text); font-weight: 700; }
+
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  select, button {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    font-family: 'Inter', sans-serif; font-size: 13px; padding: 9px 14px;
+    border-radius: 8px; cursor: pointer;
+  }
+  select { min-width: 260px; }
+  button { font-weight: 600; background: var(--home); border-color: var(--home); color: #1a0d04; }
+  button:hover { filter: brightness(1.08); }
+  button.stop { background: var(--panel); border-color: var(--line); color: var(--text-dim); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  /* ---------- Scoreboard ---------- */
+  .scoreboard {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 26px 30px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .team { text-align: center; }
+  .team .code {
+    font-family: 'Teko', sans-serif; font-weight: 700; font-size: 30px;
+    letter-spacing: 0.04em; line-height: 1;
+  }
+  .team.home .code { color: var(--home); }
+  .team.away .code { color: var(--away); }
+  .team .score {
+    font-family: 'JetBrains Mono', monospace; font-weight: 700;
+    font-size: 56px; line-height: 1; margin-top: 6px; letter-spacing: -0.02em;
+  }
+  .team .foul-line {
+    margin-top: 10px; font-size: 12px; color: var(--text-dim);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .bonus-pill {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px;
+    background: #ef444422; color: #ef4444; letter-spacing: 0.04em;
+    display: none;
+  }
+  .bonus-pill.show { display: inline-block; }
+
+  .mid { text-align: center; min-width: 110px; }
+  .mid .clock {
+    font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700;
+  }
+  .mid .period {
+    font-size: 11px; color: var(--text-dim); letter-spacing: 0.08em;
+    margin-top: 4px; text-transform: uppercase;
+  }
+  .possession-dot {
+    width: 8px; height: 8px; border-radius: 50%; margin: 10px auto 0;
+    background: var(--line); transition: all 0.25s ease;
+  }
+  .possession-dot.home { background: var(--home); box-shadow: 0 0 10px var(--home); }
+  .possession-dot.away { background: var(--away); box-shadow: 0 0 10px var(--away); }
+
+  /* ---------- Signature element: tug-of-war probability bar ---------- */
+  .tug {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px 26px 24px;
+    margin-bottom: 18px;
+  }
+  .tug-label {
+    display: flex; justify-content: space-between; font-size: 13px;
+    font-weight: 700; margin-bottom: 10px;
+  }
+  .tug-label .home-pct { color: var(--home); }
+  .tug-label .away-pct { color: var(--away); }
+  .tug-track {
+    position: relative; height: 14px; border-radius: 20px; overflow: visible;
+    background: var(--away);
+  }
+  .tug-fill {
+    position: absolute; top: 0; right: 0; height: 100%;
+    background: var(--home);
+    border-radius: 20px 0 0 20px;
+    transition: width 0.4s cubic-bezier(.4,0,.2,1);
+  }
+  .tug-marker {
+    position: absolute; top: 50%; width: 26px; height: 26px;
+    transform: translate(50%, -50%);
+    transition: right 0.4s cubic-bezier(.4,0,.2,1);
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+  }
+  .tug-ticks {
+    display: flex; justify-content: space-between; margin-top: 8px;
+    font-size: 10px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ---------- Chart ---------- */
+  .chart-panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 16px; padding: 20px 22px; height: 300px;
+  }
+
+  .footer-note {
+    text-align: center; color: var(--text-dim); font-size: 12px;
+    margin-top: 18px; line-height: 1.6;
+  }
+
+  .idle-state {
+    text-align: center; padding: 60px 20px; color: var(--text-dim);
+  }
+  .idle-state .big { font-family: 'Teko', sans-serif; font-size: 34px; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div class="brand"><span class="dot"></span><h1>NBA <b>Live Win Probability</b> Model</h1></div>
+    <div class="controls">
+      <select id="gameSelect"><option>Loading games...</option></select>
+      <button id="startBtn">Start Simulation</button>
+      <button id="stopBtn" class="stop" disabled>Stop</button>
+    </div>
+  </div>
+
+  <div id="idleState" class="idle-state">
+    <div class="big">Ready to broadcast</div>
+    <div>Pick a game from the list and hit "Start Simulation"</div>
+  </div>
+
+  <div id="liveState" style="display:none;">
+    <div class="scoreboard">
+      <div class="team away">
+        <div class="code" id="awayCode">AWAY</div>
+        <div class="score" id="awayScore">0</div>
+        <div class="foul-line">Fouls: <span id="awayFouls">0</span> <span class="bonus-pill" id="awayBonus">BONUS</span></div>
+      </div>
+      <div class="mid">
+        <div class="clock" id="clock">12:00</div>
+        <div class="period" id="period">Q1</div>
+        <div class="possession-dot" id="possessionDot"></div>
+      </div>
+      <div class="team home">
+        <div class="code" id="homeCode">HOME</div>
+        <div class="score" id="homeScore">0</div>
+        <div class="foul-line"><span class="bonus-pill" id="homeBonus">BONUS</span> Fouls: <span id="homeFouls">0</span></div>
+      </div>
+    </div>
+
+    <div class="tug">
+      <div class="tug-label">
+        <span class="away-pct" id="awayPctLabel">42.9%</span>
+        <span class="home-pct" id="homePctLabel">57.1%</span>
+      </div>
+      <div class="tug-track">
+        <div class="tug-fill" id="tugFill" style="width:50%;"></div>
+        <svg class="tug-marker" id="tugMarker" style="right:50%;" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="11" fill="#f2a93b" stroke="#0a0d13" stroke-width="1.5"/>
+          <path d="M12 1v22M1 12h22M4 4c4 4 4 12 0 16M20 4c-4 4-4 12 0 16" stroke="#0a0d13" stroke-width="1.2" fill="none"/>
+        </svg>
+      </div>
+      <div class="tug-ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+    </div>
+
+    <div class="chart-panel">
+      <canvas id="probChart"></canvas>
+    </div>
+  </div>
+
+  <div class="footer-note">Replaying real NBA play-by-play data — predictions are based on score differential, time remaining, possession, and fouls</div>
+</div>
+
+<script>
+const socket = io();
+let chart = null;
+let labels = [];
+let homeData = [];
+let currentGame = { home: 'HOME', away: 'AWAY' };
+
+async function loadGames() {
+  const res = await fetch('/api/games');
+  const games = await res.json();
+  const select = document.getElementById('gameSelect');
+  select.innerHTML = '';
+  games.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.GAME_ID;
+    opt.textContent = `${g.AWAY_TEAM_ABBR} @ ${g.HOME_TEAM_ABBR}  (${g.AWAY_PTS}-${g.HOME_PTS}, margin ${g.margin})`;
+    select.appendChild(opt);
+  });
+}
+
+function initChart() {
+  const ctx = document.getElementById('probChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Home win probability (%)',
+        data: homeData,
+        borderColor: '#ff7a29',
+        backgroundColor: 'rgba(255,122,41,0.08)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        y: { min: 0, max: 100, ticks: { color: '#838ba0' }, grid: { color: '#232838' } },
+        x: { ticks: { display: false }, grid: { display: false } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+document.getElementById('startBtn').addEventListener('click', async () => {
+  const gameId = document.getElementById('gameSelect').value;
+  labels = []; homeData = [];
+  if (chart) { chart.data.labels = labels; chart.data.datasets[0].data = homeData; chart.update(); }
+
+  await fetch('/api/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ game_id: gameId, speed: 0.15, step: 2 })
+  });
+
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+});
+
+document.getElementById('stopBtn').addEventListener('click', async () => {
+  await fetch('/api/stop', { method: 'POST' });
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+});
+
+socket.on('sim_start', (data) => {
+  document.getElementById('idleState').style.display = 'none';
+  document.getElementById('liveState').style.display = 'block';
+  currentGame = { home: data.home_tricode, away: data.away_tricode };
+  document.getElementById('homeCode').textContent = data.home_tricode;
+  document.getElementById('awayCode').textContent = data.away_tricode;
+  if (!chart) initChart();
+});
+
+socket.on('win_prob_update', (d) => {
+  document.getElementById('homeScore').textContent = d.home_score;
+  document.getElementById('awayScore').textContent = d.away_score;
+  document.getElementById('clock').textContent = d.clock.replace('PT','').replace('M',':').replace('S','').split('.')[0];
+  document.getElementById('period').textContent = 'Q' + d.period;
+
+  document.getElementById('homeFouls').textContent = d.home_fouls;
+  document.getElementById('awayFouls').textContent = d.away_fouls;
+  document.getElementById('homeBonus').classList.toggle('show', d.home_in_bonus);
+  document.getElementById('awayBonus').classList.toggle('show', d.away_in_bonus);
+
+  const dot = document.getElementById('possessionDot');
+  dot.className = 'possession-dot ' + (d.possession_home ? 'home' : 'away');
+
+  document.getElementById('homePctLabel').textContent = d.home_win_prob.toFixed(1) + '%';
+  document.getElementById('awayPctLabel').textContent = d.away_win_prob.toFixed(1) + '%';
+  document.getElementById('tugFill').style.width = d.home_win_prob + '%';
+  document.getElementById('tugMarker').style.right = d.home_win_prob + '%';
+
+  labels.push('');
+  homeData.push(d.home_win_prob);
+  if (labels.length > 300) { labels.shift(); homeData.shift(); }
+  if (chart) { chart.data.labels = labels; chart.data.datasets[0].data = homeData; chart.update('none'); }
+});
+
+socket.on('sim_end', (d) => {
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+});
+
+loadGames();
+</script>
+</body>
+</html>
