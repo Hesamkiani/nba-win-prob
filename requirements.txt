@@ -1,0 +1,10 @@
+nba_api
+pandas
+numpy
+scikit-learn
+torch
+flask
+flask-socketio
+eventlet
+joblib
+pyarrow
